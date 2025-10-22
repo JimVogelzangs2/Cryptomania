@@ -1,5 +1,13 @@
 <?php
 // simple wallet API + page
+ini_set('session.save_path', sys_get_temp_dir());
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit;
+}
+
 $dbHost = 'localhost';
 $dbName = 'cryptomania';
 $dbUser = 'root';
@@ -23,7 +31,8 @@ if (isset($_GET['action'])) {
 	$action = $_GET['action'];
 	try {
 		if ($action === 'list_wallet') {
-			$stmt = db()->query('SELECT id, date_bought, coin_symbol, coin_name, price_usd, amount FROM wallet ORDER BY id DESC');
+			$stmt = db()->prepare('SELECT id, date_bought, coin_symbol, coin_name, price_usd, amount FROM wallet WHERE user_id = ? ORDER BY id DESC');
+			$stmt->execute([$_SESSION['user_id']]);
 			$rows = $stmt->fetchAll();
 			$total = 0;
 			foreach ($rows as &$r) {
@@ -40,8 +49,22 @@ if (isset($_GET['action'])) {
 			$price = floatval($_POST['price_usd'] ?? 0);
 			$amount = floatval($_POST['amount'] ?? 0);
 			if ($symbol === '' || $name === '' || $amount <= 0 || $price <= 0) throw new Exception('Invalid data');
-			$stmt = db()->prepare('INSERT INTO wallet (date_bought, coin_id, coin_symbol, coin_name, price_usd, amount) VALUES (CURRENT_DATE(), :cid, :sym, :name, :price, :amount)');
-			$stmt->execute([':cid' => $coinId, ':sym' => $symbol, ':name' => $name, ':price' => $price, ':amount' => $amount]);
+
+			// Check if user already has this coin
+			$stmt = db()->prepare('SELECT id, amount FROM wallet WHERE user_id = ? AND coin_symbol = ?');
+			$stmt->execute([$_SESSION['user_id'], $symbol]);
+			$existing = $stmt->fetch();
+
+			if ($existing) {
+				// Update existing amount
+				$newAmount = floatval($existing['amount']) + $amount;
+				$stmt = db()->prepare('UPDATE wallet SET amount = ?, price_usd = ? WHERE id = ?');
+				$stmt->execute([$newAmount, $price, $existing['id']]);
+			} else {
+				// Insert new entry
+				$stmt = db()->prepare('INSERT INTO wallet (user_id, date_bought, coin_id, coin_symbol, coin_name, price_usd, amount) VALUES (?, CURRENT_DATE(), ?, ?, ?, ?, ?)');
+				$stmt->execute([$_SESSION['user_id'], $coinId, $symbol, $name, $price, $amount]);
+			}
 			echo json_encode(['ok' => true]);
 			exit;
 		}
@@ -49,16 +72,16 @@ if (isset($_GET['action'])) {
 			$id = intval($_POST['id'] ?? 0);
 			$amount = floatval($_POST['amount'] ?? -1);
 			if ($id <= 0 || $amount < 0) throw new Exception('Invalid data');
-			$stmt = db()->prepare('UPDATE wallet SET amount = :amount WHERE id = :id');
-			$stmt->execute([':amount' => $amount, ':id' => $id]);
+			$stmt = db()->prepare('UPDATE wallet SET amount = :amount WHERE id = :id AND user_id = :uid');
+			$stmt->execute([':amount' => $amount, ':id' => $id, ':uid' => $_SESSION['user_id']]);
 			echo json_encode(['ok' => true]);
 			exit;
 		}
 		if ($action === 'delete_wallet' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 			$id = intval($_POST['id'] ?? 0);
 			if ($id <= 0) throw new Exception('Invalid id');
-			$stmt = db()->prepare('DELETE FROM wallet WHERE id = :id');
-			$stmt->execute([':id' => $id]);
+			$stmt = db()->prepare('DELETE FROM wallet WHERE id = :id AND user_id = :uid');
+			$stmt->execute([':id' => $id, ':uid' => $_SESSION['user_id']]);
 			echo json_encode(['ok' => true]);
 			exit;
 		}
@@ -85,6 +108,7 @@ if (isset($_GET['action'])) {
 			<strong style="flex:1;">Cryptomania</strong>
 			<a href="Cryptomania.php" style="color:#fff; text-decoration:none;">Home</a>
 			<a href="wallet.php" style="color:#fff; text-decoration:none;">Wallet</a>
+			<a href="login.php?logout=1" style="color:#fff; text-decoration:none;">Logout (<?php echo htmlspecialchars($_SESSION['username']); ?>)</a>
 		</nav>
 	</header>
 	<div class="container">
@@ -114,6 +138,7 @@ if (isset($_GET['action'])) {
 		</table>
 		<p style="margin-top:10px;opacity:.8">Tip: voeg vanaf de Home/Market pagina munten toe via “Add to wallet”.</p>
 	</div>
+	<script src="https://unpkg.com/mustache@4.2.0/mustache.min.js"></script>
 	<script src="assets/cryptomania.js"></script>
 </body>
 </html>

@@ -1,3 +1,12 @@
+<?php
+ini_set('session.save_path', sys_get_temp_dir());
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit;
+}
+?>
 <!doctype html>
 <html lang="en">
 <head>
@@ -12,6 +21,7 @@
 			<strong style="flex:1;">Cryptomania</strong>
 			<a href="Cryptomania.php" style="color:#fff; text-decoration:none;">Home</a>
 			<a href="wallet.php" style="color:#fff; text-decoration:none;">Wallet</a>
+			<a href="login.php?logout=1" style="color:#fff; text-decoration:none;">Logout (<?php echo htmlspecialchars($_SESSION['username']); ?>)</a>
 		</nav>
 	</header>
 	<div class="container">
@@ -44,6 +54,7 @@
 	</div>
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/4.2.0/mustache.min.js"></script>
 	<script src="assets/cryptomania.js"></script>
 </body>
 </html>

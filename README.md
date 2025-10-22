@@ -22,17 +22,29 @@ A simple cryptocurrency portfolio tracker built with PHP, MySQL, and JavaScript.
 
 2. Create a MySQL database named `cryptomania`.
 
-3. Create the `wallet` table with the following structure:
+3. Create the `users` table with the following structure:
+
+   ```sql
+   CREATE TABLE users (
+       id INT AUTO_INCREMENT PRIMARY KEY,
+       username VARCHAR(50) UNIQUE NOT NULL,
+       password_hash VARCHAR(255) NOT NULL
+   );
+   ```
+
+4. Create the `wallet` table with the following structure:
 
    ```sql
    CREATE TABLE wallet (
        id INT AUTO_INCREMENT PRIMARY KEY,
+       user_id INT NOT NULL,
        date_bought DATE NOT NULL,
        coin_id VARCHAR(50) NOT NULL,
        coin_symbol VARCHAR(10) NOT NULL,
        coin_name VARCHAR(100) NOT NULL,
        price_usd DECIMAL(20,10) NOT NULL,
-       amount DECIMAL(20,10) NOT NULL
+       amount DECIMAL(20,10) NOT NULL,
+       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
    );
    ```
 

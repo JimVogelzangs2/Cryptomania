@@ -13,6 +13,7 @@ async function loadAssets() {
 	const body = document.getElementById('coinsBody');
 	body.innerHTML = '';
 	const { data = [] } = await getAssets(50);
+
 	data.forEach(a => {
 		const icon = a.symbol ? `https://assets.coincap.io/assets/icons/${String(a.symbol).toLowerCase()}@2x.png` : '';
 		const pct = Number(a.changePercent24Hr);
@@ -138,7 +139,7 @@ function openAddToWalletModal(asset) {
 		const amount = Number(amtEl.value);
 		if (!Number.isFinite(amount) || amount <= 0) { alert('Invalid amount'); return; }
 		try {
-			await postJson('wallet.php?action=add_wallet', {
+			const response = await postJson('wallet.php?action=add_wallet', {
 				coin_id: asset.id,
 				coin_symbol: asset.symbol,
 				coin_name: asset.name,
@@ -148,7 +149,10 @@ function openAddToWalletModal(asset) {
 			overlay.style.display = 'none';
 			showSuccess(`${asset.name} toegevoegd aan wallet`);
 			if (document.getElementById('walletBody')) loadWallet();
-		} catch (e) { alert('Add failed'); }
+		} catch (e) {
+			console.error('Add failed:', e);
+			alert('Add failed: ' + e.message);
+		}
 	};
 	const close = () => { overlay.style.display = 'none'; };
 	closeBtn.onclick = close;
@@ -163,37 +167,67 @@ async function loadWallet() {
 		const res = await fetch('wallet.php?action=list_wallet');
 		const json = await res.json();
 		if (!json.ok) throw new Error('load error');
-		for (const r of json.rows) {
-			const tr = document.createElement('tr');
-			tr.innerHTML = `
-				<td>${r.id}</td>
-				<td>${r.date_bought}</td>
-				<td>${r.coin_name} (${r.coin_symbol})</td>
-				<td>${money(r.price_usd)}</td>
-				<td><input type="number" step="any" class="amt" value="${r.amount}"></td>
-				<td>${money(r.total)}</td>
-				<td><button class="btn btn-warn save" type="button">Save</button></td>
-				<td><button class="btn btn-danger del" type="button">Delete</button></td>
-			`;
-			tr.querySelector('.save').onclick = async () => {
+
+		// Define Mustache template for wallet rows
+		const walletTemplate = `
+			{{#rows}}
+			<tr>
+				<td>{{id}}</td>
+				<td>{{date_bought}}</td>
+				<td>{{coin_name}} ({{coin_symbol}})</td>
+				<td>{{price}}</td>
+				<td><input type="number" step="any" class="amt" value="{{amount}}"></td>
+				<td>{{total}}</td>
+				<td><button class="btn btn-warn save" type="button" data-id="{{id}}">Save</button></td>
+				<td><button class="btn btn-danger del" type="button" data-id="{{id}}">Delete</button></td>
+			</tr>
+			{{/rows}}
+		`;
+
+		// Prepare data for Mustache rendering
+		const walletData = json.rows.map(r => ({
+			id: r.id,
+			date_bought: r.date_bought,
+			coin_name: r.coin_name,
+			coin_symbol: r.coin_symbol,
+			price: money(r.price_usd),
+			amount: r.amount,
+			total: money(r.total)
+		}));
+
+		// Render all rows with Mustache
+		const renderedRows = Mustache.render(walletTemplate, { rows: walletData });
+		body.innerHTML = renderedRows;
+
+		// Attach event handlers to buttons
+		body.querySelectorAll('.save').forEach(btn => {
+			const id = btn.dataset.id;
+			const row = json.rows.find(r => r.id == id);
+			btn.onclick = async () => {
+				const tr = btn.closest('tr');
 				const val = Number(tr.querySelector('.amt').value);
 				if (!Number.isFinite(val) || val < 0) { alert('Invalid amount'); return; }
 				try {
-					await postJson('wallet.php?action=update_wallet', { id: r.id, amount: val });
+					await postJson('wallet.php?action=update_wallet', { id: row.id, amount: val });
 					showSuccess('Saved');
 					loadWallet();
 				} catch (e) { alert('Save failed'); }
 			};
-			tr.querySelector('.del').onclick = async () => {
+		});
+
+		body.querySelectorAll('.del').forEach(btn => {
+			const id = btn.dataset.id;
+			const row = json.rows.find(r => r.id == id);
+			btn.onclick = async () => {
 				if (!confirm('Delete this row?')) return;
 				try {
-					await postJson('wallet.php?action=delete_wallet', { id: r.id });
+					await postJson('wallet.php?action=delete_wallet', { id: row.id });
 					showSuccess('Deleted');
 					loadWallet();
 				} catch (e) { alert('Delete failed'); }
 			};
-			body.appendChild(tr);
-		}
+		});
+
 		document.getElementById('walletGrandTotal').textContent = money(json.grandTotal);
 	} catch (e) {
 		body.innerHTML = '<tr><td colspan="8">Failed to load wallet</td></tr>';
